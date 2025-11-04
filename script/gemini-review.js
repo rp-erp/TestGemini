@@ -6,19 +6,20 @@ const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
 
-// ✅ Lấy PR number đúng cách
+// ✅ Get current PR number
 const eventPath = process.env.GITHUB_EVENT_PATH;
 const eventData = JSON.parse(fs.readFileSync(eventPath, "utf8"));
 const prNumber = eventData.pull_request?.number;
 
 if (!prNumber) {
-  console.error("❌ Cannot determine pull request number.");
-  process.exit(1);
+	console.error("❌ Cannot determine pull request number.");
+	process.exit(1);
 }
 
 // ---------- CONFIGURATION ----------
 const MODEL = "gemini-2.5-flash"; // or gemini-2.5-pro for higher accuracy
 const REVIEW_MODE = process.env.REVIEW_MODE || "full"; // "inline", "summary", or "full"
+const REVIEW_LANGUAGE = process.env.REVIEW_LANGUAGE || "ASP.NET Core (C# backend) and Angular (TypeScript frontend)"; // Specify the project language/context here
 // ----------------------------------
 
 const summaryFormat = `
@@ -56,37 +57,37 @@ const inlineFormat = `
 
 // Helper to call Gemini
 async function callGemini(promptText, apiKey) {
-  const res = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
-    {
-      contents: [{ parts: [{ text: promptText }] }],
-    },
-  );
-  return res.data.candidates?.[0]?.content?.parts?.[0]?.text;
+	const res = await axios.post(
+		`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
+		{
+			contents: [{ parts: [{ text: promptText }] }],
+		}
+	);
+	return res.data.candidates?.[0]?.content?.parts?.[0]?.text;
 }
 
 async function main() {
-  console.log(`📦 Fetching changed files for PR #${prNumber}...`);
+	console.log(`📦 Fetching changed files for PR #${prNumber}...`);
 
-  const { data: files } = await octokit.pulls.listFiles({
-    owner,
-    repo,
-    pull_number: prNumber,
-  });
+	const { data: files } = await octokit.pulls.listFiles({
+		owner,
+		repo,
+		pull_number: prNumber,
+	});
 
-  if (!files.length) {
-    console.log("⚠️ No files changed in this PR.");
-  }
+	if (!files.length) {
+		console.log("⚠️ No files changed in this PR.");
+	}
 
-  let fileDiffs = "";
-  for (const file of files) {
-    if (file.patch) {
-      fileDiffs += `\nFile: ${file.filename}\n${file.patch}\n`;
-    }
-  }
+	let fileDiffs = "";
+	for (const file of files) {
+		if (file.patch) {
+			fileDiffs += `\nFile: ${file.filename}\n${file.patch}\n`;
+		}
+	}
 
-  let reviewPrompt = `
-  	Context: This project is a web-based ERP system built using ASP.NET Core (C# backend) and Angular (TypeScript frontend).
+	let reviewPrompt = `
+  	Context: This project is a web-based ERP system built using ${REVIEW_LANGUAGE}.
  	You are an experienced senior software engineer acting as an automated code reviewer.
 	You will receive one or more source code diffs from a Pull Request.
 
@@ -124,78 +125,77 @@ async function main() {
 	- Suggest adding comments or documentation if logic is complex.
   `;
 
-  console.log("🤖 Sending diff to Gemini...");
+	console.log("🤖 Sending diff to Gemini...");
 
-  // ---------- INLINE REVIEW ----------
-  if (REVIEW_MODE === "inline" || REVIEW_MODE === "full") {
-    console.log("💬 Generating inline comments...");
-    const inlineResponse = await callGemini(
-      `${reviewPrompt}\n\n${inlineFormat}\n\n${fileDiffs}`,
-      process.env.GEMINI_API_KEY,
-    );
+	// ---------- INLINE REVIEW ----------
+	if (REVIEW_MODE === "inline" || REVIEW_MODE === "full") {
+		console.log("💬 Generating inline comments...");
+		const inlineResponse = await callGemini(
+			`${reviewPrompt}\n\n${inlineFormat}\n\n${fileDiffs}`,
+			process.env.GEMINI_API_KEY
+		);
 
-    let inlineComments = [];
-    try {
-      const cleaned = inlineResponse
-        ?.replace(/```json/g, "")
-        ?.replace(/```/g, "")
-        ?.trim();
-      inlineComments = JSON.parse(cleaned);
-    } catch (err) {
-      console.error("⚠️ Gemini returned invalid JSON for inline review:");
-      console.log(inlineResponse);
-    }
+		let inlineComments = [];
+		try {
+			const cleaned = inlineResponse
+				?.replace(/```json/g, "")
+				?.replace(/```/g, "")
+				?.trim();
+			inlineComments = JSON.parse(cleaned);
+		} catch (err) {
+			console.error("⚠️ Gemini returned invalid JSON for inline review:");
+			console.log(inlineResponse);
+		}
 
-    if (inlineComments.length) {
-      try {
-        await octokit.pulls.createReview({
-          owner,
-          repo,
-          pull_number: prNumber,
-          event: "COMMENT",
-          comments: inlineComments.map((c) => ({
-            path: c.file,
-            position: c.line, // chú ý: line trong diff, không phải file gốc
-            body: `💡 ${c.comment}`,
-          })),
-        });
-      } catch (err) {
-        console.error(
-          `❌ Failed to comment on ${r.file}:${r.line}`,
-          err.message,
-        );
-      }
-      console.log(`✅ Added ${inlineComments.length} inline comments.`);
-    } else {
-      console.log("✅ No inline issues found.");
-    }
-  }
+		if (inlineComments.length) {
+			try {
+				await octokit.pulls.createReview({
+					owner,
+					repo,
+					pull_number: prNumber,
+					event: "COMMENT",
+					comments: inlineComments.map((c) => ({
+						path: c.file,
+						position: c.line, // line number in the diff
+						body: `💡 ${c.comment}`,
+					})),
+				});
+			} catch (err) {
+				console.error(`❌ Failed to createReview: `, err.message);
+				console.log("Generated inline comments:", inlineComments);
+			}
+			console.log(`✅ Added ${inlineComments.length} inline comments.`);
+		} else {
+			console.log("✅ No inline issues found.");
+		}
+	}
 
-  // ---------- SUMMARY REVIEW ----------
-  if (REVIEW_MODE === "summary" || REVIEW_MODE === "full") {
-    console.log("🧠 Generating summary review...");
-    const summaryResponse = await callGemini(
-      `${reviewPrompt}\n\n${summaryFormat}\n\n${fileDiffs}`,
-      process.env.GEMINI_API_KEY_2,
-    );
+	// ---------- SUMMARY REVIEW ----------
+	if (REVIEW_MODE === "summary" || REVIEW_MODE === "full") {
+		console.log("🧠 Generating summary review...");
+		const summaryResponse = await callGemini(
+			`${reviewPrompt}\n\n${summaryFormat}\n\n${fileDiffs}`,
+			process.env.GEMINI_API_KEY_2
+		);
 
-    if (summaryResponse) {
-      await octokit.issues.createComment({
-        owner,
-        repo,
-        issue_number: prNumber,
-        body: `🤖 **Gemini Summary Review**\n\n${summaryResponse}`,
-      });
-      console.log("✅ Summary review posted.");
-    } else {
-      console.log("⚠️ No summary review generated.");
-    }
-  }
+		if (summaryResponse) {
+			await octokit.issues.createComment({
+				owner,
+				repo,
+				issue_number: prNumber,
+				body: `🤖 **Gemini Summary Review**\n\n${summaryResponse}`,
+			});
+			console.log("✅ Summary review posted.");
+		} else {
+			console.log("⚠️ No summary review generated.");
+			console.log("Response:", summaryResponse);
+		}
+	}
 
-  console.log("🏁 Review completed.");
+	console.log("🏁 Review completed.");
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err.response?.data || err.message);
-  process.exit(1);
+	console.error("❌ Error:", err.response?.data || err.message);
+	process.exit(1);
 });
