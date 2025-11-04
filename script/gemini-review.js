@@ -43,7 +43,7 @@ const inlineFormat = `
 	[
 	{
 		"file": "filename.extension",
-		"line": <The position in the diff where you want to add a review comment. Note this value is not the same as the line number in the file. The position value equals the number of lines down from the first "@@" hunk header in the file you want to add a comment. The line just below the "@@" line is position 1, the next line is position 2, and so on. The position in the diff continues to increase through lines of whitespace and additional hunks until the beginning of a new file.>,
+		"line": <The position in the diff where you want to add a review comment. Note this value is not the same as the line number in the file. The position value equals the number of lines down from the first "@@" hunk header in the file you want to add a comment. The line just below the "@@" line is position 1, the next line is position 2, and so on. The position in the diff continues to increase through lines of whitespace and additional hunks until the beginning of a new file. Count from the top of the diff patch (first line = position 1)>,
 		"comment": "clear actionable feedback"
 	}
 	]
