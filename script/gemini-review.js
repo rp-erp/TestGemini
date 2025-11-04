@@ -43,7 +43,7 @@ const inlineFormat = `
 	[
 	{
 		"file": "filename.extension",
-		"line": <line_number_in_diff>,
+		"line": <position in diff hunk>,
 		"comment": "clear actionable feedback"
 	}
 	]
