@@ -43,10 +43,15 @@ const inlineFormat = `
 	[
 	{
 		"file": "filename.extension",
-		"line": <position in diff hunk>,
+		"position": <the correct diff line index (integer), based on the provided patch (NOT the original file line number)>,
 		"comment": "clear actionable feedback"
 	}
 	]
+
+	How to find "position":
+	- Count from the top of the diff patch (first line = position 1).
+	- Only comment on lines starting with "+" (added or changed lines).
+	- The "position" must match the line's index **within the diff**, not the real file.
 
 	Rules:
 	- Line numbers must match the diff chunk's new code lines.
