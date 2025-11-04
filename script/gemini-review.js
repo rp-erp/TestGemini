@@ -161,7 +161,7 @@ async function main() {
 					event: "COMMENT",
 					comments: inlineComments.map((c) => ({
 						path: c.file,
-						position: c.line, // line number in the diff
+						position: c.position, // line number in the diff
 						body: `💡 ${c.comment}`,
 					})),
 				});
